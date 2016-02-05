@@ -25,7 +25,23 @@
         NSArray *paths                  = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask,YES);
         NSString *documentsDirectory    = [paths objectAtIndex:0];
         NSString *path                  = [documentsDirectory stringByAppendingPathComponent:@"edqueue_0.5.0d.db"];
-      NSLog(@"%@", path);
+      
+        // application support directory is not existing by default
+      
+        if (![[NSFileManager defaultManager] fileExistsAtPath:documentsDirectory isDirectory:NULL]) {
+            NSError *error = nil;
+            if (![[NSFileManager defaultManager] createDirectoryAtPath:documentsDirectory withIntermediateDirectories:YES attributes:nil error:&error]) {
+                NSLog(@"%@", error.localizedDescription);
+            } else {
+                NSURL *url = [NSURL fileURLWithPath:documentsDirectory];
+                if (![url setResourceValue:@YES
+                                    forKey:NSURLIsExcludedFromBackupKey
+                                     error:&error])
+                {
+                    NSLog(@"Error excluding %@ from backup %@", url.lastPathComponent, error.localizedDescription);
+                }
+            }
+        }
       
         // Allocate the queue
         _queue                          = [[FMDatabaseQueue alloc] initWithPath:path];
@@ -33,21 +49,21 @@
             [db executeUpdate:@"CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY, task TEXT NOT NULL, data TEXT NOT NULL, attempts INTEGER DEFAULT 0, stamp STRING DEFAULT (strftime('%s','now')) NOT NULL, udef_1 TEXT, udef_2 TEXT, processing INTEGER DEFAULT 0)"];
             [self _databaseHadError:[db hadError] fromDatabase:db];
           
-          FMResultSet *rs = [db executeQuery:@"PRAGMA table_info(queue)"];
-          BOOL processing_exists = NO;
-          while ([rs next]) {
-            if ([[rs stringForColumnIndex:1] isEqualToString:@"processing"]) {
-              processing_exists = YES;
-              break;
+            FMResultSet *rs = [db executeQuery:@"PRAGMA table_info(queue)"];
+            BOOL processing_exists = NO;
+            while ([rs next]) {
+                if ([[rs stringForColumnIndex:1] isEqualToString:@"processing"]) {
+                    processing_exists = YES;
+                    break;
+                }
             }
-          }
-          [rs close];
-          
-          if (!processing_exists) {
-            [db executeUpdate:@"ALTER TABLE queue ADD COLUMN processing INTEGER DEFAULT 0"];
-            [self _databaseHadError:[db hadError] fromDatabase:db];
-          }
-          
+            [rs close];
+            
+            if (!processing_exists) {
+                [db executeUpdate:@"ALTER TABLE queue ADD COLUMN processing INTEGER DEFAULT 0"];
+                [self _databaseHadError:[db hadError] fromDatabase:db];
+            }
+            
         }];
     }
     
