@@ -17,9 +17,11 @@
 - (BOOL)jobExistsForTask:(id)task;
 - (void)incrementAttemptForJob:(NSNumber *)jid;
 - (void)removeJob:(NSNumber *)jid;
+- (void)unmarkAllJobs;
 - (void)removeAllJobs;
 - (NSUInteger)fetchJobCount;
 - (NSUInteger)jobCountForTask:(id)task;
+- (NSArray *)fetchJobsAndMark:(NSUInteger)numberOfJobs;
 - (NSDictionary *)fetchJob;
 - (NSDictionary *)fetchJobForTask:(id)task;
 

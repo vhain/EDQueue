@@ -25,12 +25,29 @@
         NSArray *paths                  = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask,YES);
         NSString *documentsDirectory    = [paths objectAtIndex:0];
         NSString *path                  = [documentsDirectory stringByAppendingPathComponent:@"edqueue_0.5.0d.db"];
-        
+      NSLog(@"%@", path);
+      
         // Allocate the queue
         _queue                          = [[FMDatabaseQueue alloc] initWithPath:path];
         [self.queue inDatabase:^(FMDatabase *db) {
-            [db executeUpdate:@"CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY, task TEXT NOT NULL, data TEXT NOT NULL, attempts INTEGER DEFAULT 0, stamp STRING DEFAULT (strftime('%s','now')) NOT NULL, udef_1 TEXT, udef_2 TEXT)"];
+            [db executeUpdate:@"CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY, task TEXT NOT NULL, data TEXT NOT NULL, attempts INTEGER DEFAULT 0, stamp STRING DEFAULT (strftime('%s','now')) NOT NULL, udef_1 TEXT, udef_2 TEXT, processing INTEGER DEFAULT 0)"];
             [self _databaseHadError:[db hadError] fromDatabase:db];
+          
+          FMResultSet *rs = [db executeQuery:@"PRAGMA table_info(queue)"];
+          BOOL processing_exists = NO;
+          while ([rs next]) {
+            if ([[rs stringForColumnIndex:1] isEqualToString:@"processing"]) {
+              processing_exists = YES;
+              break;
+            }
+          }
+          [rs close];
+          
+          if (!processing_exists) {
+            [db executeUpdate:@"ALTER TABLE queue ADD COLUMN processing INTEGER DEFAULT 0"];
+            [self _databaseHadError:[db hadError] fromDatabase:db];
+          }
+          
         }];
     }
     
@@ -108,7 +125,7 @@
 - (void)incrementAttemptForJob:(NSNumber *)jid
 {
     [self.queue inDatabase:^(FMDatabase *db) {
-        [db executeUpdate:@"UPDATE queue SET attempts = attempts + 1 WHERE id = ?", jid];
+        [db executeUpdate:@"UPDATE queue SET attempts = attempts + 1, processing = 0 WHERE id = ?", jid];
         [self _databaseHadError:[db hadError] fromDatabase:db];
     }];
 }
@@ -129,16 +146,29 @@
 }
 
 /**
+ * Unmark all jobs
+ *
+ * @return {void}
+ *
+ */
+- (void)unmarkAllJobs {
+    [self.queue inDatabase:^(FMDatabase *db) {
+        [db executeUpdate:@"UPDATE queue SET processing = 0"];
+        [self _databaseHadError:[db hadError] fromDatabase:db];
+    }];
+}
+
+/**
  * Removes all pending jobs from the datastore
  *
  * @return {void}
  *
  */
 - (void)removeAllJobs {
-    [self.queue inDatabase:^(FMDatabase *db) {
-        [db executeUpdate:@"DELETE FROM queue"];
-        [self _databaseHadError:[db hadError] fromDatabase:db];
-    }];
+  [self.queue inDatabase:^(FMDatabase *db) {
+    [db executeUpdate:@"DELETE FROM queue"];
+    [self _databaseHadError:[db hadError] fromDatabase:db];
+  }];
 }
 
 /**
@@ -162,6 +192,34 @@
     }];
     
     return count;
+}
+
+/**
+ * Marks jobs as processing and return them
+ *
+ * @param {NSNumber} Job id
+ *
+ * @return {void}
+ */
+- (NSArray *)fetchJobsAndMark:(NSUInteger)numberOfJobs {
+  __block NSMutableArray *jobs = [NSMutableArray array];
+  
+  [self.queue inDatabase:^(FMDatabase *db) {
+    FMResultSet *rs = [db executeQueryWithFormat:@"SELECT * FROM queue WHERE processing = 0 ORDER BY id ASC LIMIT %i", @(numberOfJobs)];
+    [self _databaseHadError:[db hadError] fromDatabase:db];
+    
+    NSMutableArray *ids = [NSMutableArray array];
+    while ([rs next]) {
+      [jobs addObject:[self _jobFromResultSet:rs]];
+      [ids addObject:[NSString stringWithFormat:@"%i", [rs intForColumn:@"id"]]];
+    }
+    [rs close];
+
+    [db executeUpdate:[NSString stringWithFormat:@"UPDATE queue SET processing = 1 WHERE id IN (%@)", [ids componentsJoinedByString:@","]]];
+    [self _databaseHadError:[db hadError] fromDatabase:db];
+  }];
+  
+  return jobs;
 }
 
 /**
@@ -221,7 +279,8 @@
         @"task":        [rs stringForColumn:@"task"],
         @"data":        [NSJSONSerialization JSONObjectWithData:[[rs stringForColumn:@"data"] dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingMutableContainers error:nil],
         @"attempts":    [NSNumber numberWithInt:[rs intForColumn:@"attempts"]],
-        @"stamp":       [rs stringForColumn:@"stamp"]
+        @"stamp":       [rs stringForColumn:@"stamp"],
+        @"processing":  [NSNumber numberWithInt:[rs intForColumn:@"processing"]]
     };
     return job;
 }
