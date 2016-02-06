@@ -221,18 +221,18 @@
   __block NSMutableArray *jobs = [NSMutableArray array];
   
   [self.queue inDatabase:^(FMDatabase *db) {
-    FMResultSet *rs = [db executeQueryWithFormat:@"SELECT * FROM queue WHERE processing = 0 ORDER BY id ASC LIMIT %i", @(numberOfJobs)];
-    [self _databaseHadError:[db hadError] fromDatabase:db];
-    
-    NSMutableArray *ids = [NSMutableArray array];
-    while ([rs next]) {
-      [jobs addObject:[self _jobFromResultSet:rs]];
-      [ids addObject:[NSString stringWithFormat:@"%i", [rs intForColumn:@"id"]]];
-    }
-    [rs close];
+      FMResultSet *rs = [db executeQueryWithFormat:@"SELECT * FROM queue WHERE processing = 0 ORDER BY id ASC LIMIT %lu", numberOfJobs];
+      [self _databaseHadError:[db hadError] fromDatabase:db];
+      
+      NSMutableArray *ids = [NSMutableArray array];
+      while ([rs next]) {
+          [jobs addObject:[self _jobFromResultSet:rs]];
+          [ids addObject:[NSString stringWithFormat:@"%i", [rs intForColumn:@"id"]]];
+      }
+      [rs close];
 
-    [db executeUpdate:[NSString stringWithFormat:@"UPDATE queue SET processing = 1 WHERE id IN (%@)", [ids componentsJoinedByString:@","]]];
-    [self _databaseHadError:[db hadError] fromDatabase:db];
+      [db executeUpdate:[NSString stringWithFormat:@"UPDATE queue SET processing = 1 WHERE id IN (%@)", [ids componentsJoinedByString:@","]]];
+      [self _databaseHadError:[db hadError] fromDatabase:db];
   }];
   
   return jobs;
