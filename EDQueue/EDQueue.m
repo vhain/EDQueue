@@ -195,7 +195,8 @@ NSString *const EDQueueDidDrain = @"EDQueueDidDrain";
         if (self.isRunning && self.concurrency > self.activeTaskCount && [self.engine fetchJobCount] > 0) {
             NSArray *jobs = [self.engine fetchJobsAndMark:self.concurrency - self.activeTaskCount];
             if (jobs == nil || [jobs count] < 1) return;
-            
+            _activeTaskCount += [jobs count];
+          
             if ([self.delegate respondsToSelector:@selector(queue:processJob:completion:)]) {
                 for (NSDictionary *job in jobs) {
                     dispatch_async(_queue, ^{
@@ -244,6 +245,7 @@ NSString *const EDQueueDidDrain = @"EDQueueDidDrain";
         }
         
         // Clean-up
+        _activeTaskCount--;
       
         // Drain
         if ([self.engine fetchJobCount] == 0) {
